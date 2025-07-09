@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>かんたん出納帳</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <style>
+        .hidden-input { display: none; }
+    </style>
+</head>
+<body class="bg-gray-100 font-inter min-h-screen flex items-center justify-center p-4">
+
+    <div id="authScreen" class="w-full max-w-md bg-white p-8 rounded-xl shadow-xl">
+        <h2 class="text-2xl font-bold text-center mb-4">ログイン</h2>
+        <input id="loginEmail" type="email" placeholder="メールアドレス" class="w-full mb-3 p-2 border rounded">
+        <input id="loginPassword" type="password" placeholder="パスワード" class="w-full mb-3 p-2 border rounded">
+        <button id="loginBtn" class="w-full bg-indigo-600 text-white py-2 rounded mb-2">ログイン</button>
+        <p id="showRegisterLink" class="text-sm text-center text-indigo-600 cursor-pointer">新規登録はこちら</p>
+        <div id="registerForm" class="hidden mt-4">
+            <input id="registerEmail" type="email" placeholder="メールアドレス" class="w-full mb-3 p-2 border rounded">
+            <input id="registerPassword" type="password" placeholder="パスワード" class="w-full mb-3 p-2 border rounded">
+            <input id="registerPasswordConfirm" type="password" placeholder="パスワード（確認）" class="w-full mb-3 p-2 border rounded">
+            <button id="registerBtn" class="w-full bg-green-600 text-white py-2 rounded">登録する</button>
+        </div>
+    </div>
+
+    <div id="appContainer" class="hidden w-full max-w-4xl bg-white p-8 rounded-xl shadow-2xl flex flex-col">
+        <div class="flex justify-between items-center mb-6"> <p id="loggedInUser" class="text-sm text-gray-600"></p> <button id="logoutBtn" class="text-sm text-red-500 hover:underline">ログアウト</button> </div>
+        
+        <div id="homeScreen" class="hidden space-y-6">
+            <p class="text-center text-gray-600">現在の残高:</p>
+            <p id="currentBalanceHome" class="text-4xl font-bold text-center">¥0</p>
+            <div class="flex justify-around">
+                <button id="toDepositBtn" class="bg-green-500 text-white py-2 px-6 rounded-lg">入金</button>
+                <button id="toPaymentBtn" class="bg-red-500 text-white py-2 px-6 rounded-lg">支払い</button>
+            </div>
+            <div class="flex justify-around">
+                <button id="toListBtn" class="text-blue-600 hover:underline">取引一覧</button>
+            </div>
+            <div class="flex justify-center mt-2">
+                <button id="toAdminBtn" class="text-gray-600 hover:underline">摘要・科目設定</button>
+            </div>
+            <div class="flex justify-center">
+                <button id="balanceCheckBtn" class="bg-yellow-500 text-white py-2 px-6 rounded-lg">残高チェック</button>
+            </div>
+        </div>
+
+        <div id="transactionFormScreen" class="hidden">
+            <h2 id="transactionFormTitle" class="text-xl font-semibold text-center mb-4"></h2>
+            <input id="transactionDate" type="date" class="w-full p-2 border rounded mb-3">
+            
+            <div id="depositFormContainer">
+                <input id="depositAmount" type="number" min="1" class="w-full p-2 border rounded mb-3" placeholder="金額">
+                <div class="mb-3">
+                    <label for="depositDescriptionSelect" class="block text-sm font-medium text-gray-700">摘要:</label>
+                    <select id="depositDescriptionSelect" class="w-full p-2 border rounded mt-1"></select>
+                    <input type="text" id="depositDescriptionOther" class="w-full p-2 border rounded mt-2 hidden-input" placeholder="摘要を自由入力">
+                </div>
+                <div>
+                    <label for="depositHandlerName" class="block text-sm font-medium text-gray-700">担当者名 (任意):</label>
+                    <input type="text" id="depositHandlerName" class="w-full p-2 border rounded mt-1" placeholder="担当者名を入力">
+                </div>
+            </div>
+
+            <div id="paymentFormContainer" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                    <div>
+                        <label for="paymentDescriptionSelect" class="block text-sm font-medium text-gray-700">買った場所 (摘要):</label>
+                        <select id="paymentDescriptionSelect" class="w-full p-2 border rounded mt-1"></select>
+                        <input type="text" id="paymentDescriptionOther" class="w-full p-2 border rounded mt-2 hidden-input" placeholder="摘要を自由入力">
+                    </div>
+                    <div>
+                        <label for="paymentHandlerName" class="block text-sm font-medium text-gray-700">担当者名 (任意):</label>
+                        <input type="text" id="paymentHandlerName" class="w-full p-2 border rounded mt-1" placeholder="担当者名を入力">
+                    </div>
+                </div>
+                <div class="border-t border-b py-4 my-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-lg font-medium">明細</h3>
+                        <button id="addPaymentDetailBtn" class="bg-blue-500 text-white text-sm py-1 px-3 rounded-full">+</button>
+                    </div>
+                    <div id="paymentDetailsContainer" class="space-y-3">
+                        </div>
+                </div>
+                <div class="text-right text-xl font-bold mb-4">合計: <span id="totalPaymentAmount">¥0</span></div>
+            </div>
+            
+            <div class="flex justify-between pt-4">
+                <button type="button" id="addTransactionBtn" class="bg-indigo-600 text-white py-2 px-4 rounded">登録</button>
+                <button type="button" id="backToHomeBtn" class="bg-gray-200 text-gray-700 py-2 px-4 rounded">戻る</button>
+            </div>
+        </div>
+        
+        <div id="listScreen" class="hidden">
+            <div class="flex items-center justify-between mb-4 flex-wrap">
+                <h2 class="text-xl font-semibold">取引一覧</h2>
+                <div class="flex items-center mt-2 sm:mt-0">
+                    <button id="prevMonthBtn" class="px-3 py-1 bg-gray-200 rounded-l-md hover:bg-gray-300">&lt; 前月</button>
+                    <span id="monthDisplay" class="px-4 py-1 bg-gray-100 font-bold text-lg text-center" style="min-width: 150px;"></span>
+                    <button id="nextMonthBtn" class="px-3 py-1 bg-gray-200 rounded-r-md hover:bg-gray-300">次月 &gt;</button>
+                </div>
+            </div>
+            <table class="w-full text-sm mb-4 border-collapse">
+                <thead>
+                    <tr>
+                        <th class="border px-2">月</th><th class="border px-2">日</th><th class="border px-2">科目</th>
+                        <th class="border px-2">税区分</th>
+                        <th class="border px-2 text-right">入金</th><th class="border px-2 text-right">支払</th>
+                        <th class="border px-2">担当者</th>
+                        <th class="border px-2 text-right">残高</th>
+                        <th class="border px-2 text-center">編集</th>
+                    </tr>
+                </thead>
+                <tbody id="listBody"></tbody>
+            </table>
+            <div class="flex justify-between">
+                <button id="exportMfBtn" class="bg-blue-500 text-white py-2 px-4 rounded">この月のデータをMFエクスポート</button>
+                <button id="backFromListBtn" class="bg-gray-200 text-gray-700 py-2 px-4 rounded">戻る</button>
+            </div>
+        </div>
+
+        <div id="adminScreen" class="hidden">
+            <h2 class="text-xl font-semibold mb-4">摘要・科目 設定</h2>
+            <div class="bg-gray-50 p-4 rounded-lg mb-6">
+                <h3 class="text-lg font-medium mb-3">新しい摘要を追加</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div>
+                        <label for="newDescriptionText" class="block text-sm font-medium text-gray-700">摘要名</label>
+                        <input type="text" id="newDescriptionText" class="w-full p-2 border rounded mt-1" placeholder="例: 新しい仕入先">
+                    </div>
+                    <div>
+                        <label for="newDescriptionType" class="block text-sm font-medium text-gray-700">取引種別</label>
+                        <select id="newDescriptionType" class="w-full p-2 border rounded mt-1">
+                            <option value="payment">支払い</option>
+                            <option value="deposit">入金</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="newDescriptionAccount" class="block text-sm font-medium text-gray-700">紐付ける科目</label>
+                        <select id="newDescriptionAccount" class="w-full p-2 border rounded mt-1"></select>
+                    </div>
+                    <button id="addDescriptionBtn" class="bg-blue-600 text-white py-2 px-4 rounded h-fit">追加</button>
+                </div>
+            </div>
+            <h3 class="text-lg font-medium mb-3">登録済み摘要一覧</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm mb-4 border-collapse">
+                    <thead><tr class="bg-gray-200"><th class="border px-2 py-1">摘要名</th><th class="border px-2 py-1">取引種別</th><th class="border px-2 py-1">紐付く科目</th><th class="border px-2 py-1 text-center">操作</th></tr></thead>
+                    <tbody id="adminListBody"></tbody>
+                </table>
+            </div>
+            <button id="backFromAdminBtn" class="bg-gray-200 text-gray-700 py-2 px-4 rounded mt-4">戻る</button>
+        </div>
+
+        <div id="listEditModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden"> <div class="bg-white p-6 rounded-lg w-full max-w-md"> <h2 class="text-xl font-semibold mb-4">取引編集</h2> <input type="hidden" id="editId"> <input type="hidden" id="editTransactionType"> <div class="mb-2"><label>日付:</label><input type="date" id="editDate" class="w-full p-2 border rounded"></div> <div class="mb-2"><label>金額:</label><input type="number" id="editAmount" class="w-full p-2 border rounded" min="1"></div> <div class="mb-2"> <label for="editDescriptionSelect" class="block text-sm font-medium text-gray-700">摘要:</label> <select id="editDescriptionSelect" class="w-full p-2 border rounded mt-1"></select> <input type="text" id="editDescriptionOther" class="w-full p-2 border rounded mt-2 hidden-input" placeholder="摘要を自由入力"> </div> <div class="mb-2"><label>科目:</label><select id="editAccountSelect" class="w-full p-2 border rounded"></select></div> <div class="mb-2"> <label for="editTaxCategory" class="block text-sm font-medium text-gray-700">税区分:</label> <select id="editTaxCategory" class="w-full p-2 border rounded mt-1"></select> </div> <div class="mb-3"> <label class="inline-flex items-center"> <input type="checkbox" id="editInvoiceYn" class="mr-2"> 適格請求書発行事業者 </label> </div> <div class="flex justify-end space-x-2 mt-4"> <button id="saveEditBtn" class="bg-indigo-600 text-white py-2 px-4 rounded">保存</button> <button id="deleteEditBtn" class="bg-red-500 text-white py-2 px-4 rounded">削除</button> <button id="cancelEditBtn" class="bg-gray-200 text-gray-700 py-2 px-4 rounded">キャンセル</button> </div> </div> </div>
+        <div id="balanceCheckModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden"> </div>
+    </div>
+
+    <script defer>
+        document.addEventListener('DOMContentLoaded', () => {
+            const accountTitles = ['食料仕入高','外注工賃','租税公課','荷造運賃','水道光熱費','旅費交通費','通信費','広告宣伝費','接待交際費','損害保険料','修繕費','消耗品費','福利厚生費','地代家賃','リース料','研修採用費','新聞図書費','会議費','場所代','音響・照明','映像撮影','支払手数料','雑費','資金移動','仮払金','事業主貸', '現金過不足', '売上高', '事業主借', '雑収入'];
+            const taxCategories = ["対象外", "課税仕入10%", "課税仕入8%(軽)", "課税売上10%", "課税売上8%(軽)", "非課税売上", "非課税仕入", "不課税"];
+            // ★★★【変更】支払い登録で使用する税率選択肢 ★★★
+            const paymentTaxCategories = ["課税仕入 (軽)8%", "課税仕入 10%"];
+            const OTHER_DESCRIPTION = "その他";
+            const defaultDescriptions = [ { text: "レジ現金から入金", type: "deposit", account: "資金移動" }, { text: "売上金から入金", type: "deposit", account: "資金移動" }, { text: "フレスコ", type: "payment", account: "食料仕入高" }, { text: "業務スーパー", type: "payment", account: "食料仕入高" }, { text: "木村喜商店", type: "payment", account: "食料仕入高" }, { text: "八百屋みどりなす", type: "payment", account: "食料仕入高" }, { text: "株式会社プロサムフーズ", type: "payment", account: "食料仕入高" }, { text: "SARTAJ", type: "payment", account: "食料仕入高" }, { text: "神戸スパイス", type: "payment", account: "食料仕入高" }, { text: "関西電力", type: "payment", account: "水道光熱費" }, { text: "ワッツ", type: "payment", account: "消耗品費" }, { text: "新鮮市場", type: "payment", account: "食料仕入高" }, { text: "叶屋", type: "payment", account: "食料仕入高" }, { text: "ムスリムCOOP", type: "payment", account: "食料仕入高" }, ];
+            const accountTitleToCodeMap = { '食料仕入高': 100, '外注工賃': 101, '租税公課': 102, '荷造運賃': 103, '水道光熱費': 104, '旅費交通費': 105, '通信費': 106, '広告宣伝費': 107, '接待交際費': 108, '損害保険料': 109, '修繕費': 110, '消耗品費': 111, '福利厚生費': 112, '地代家賃': 113, 'リース料': 114, '研修採用費': 115, '新聞図書費': 116, '会議費': 117, '場所代': 118, '音響・照明': 119, '映像撮影': 120, '支払手数料': 121, '雑費': 122, '資金移動': 123, '仮払金': 124, '事業主借': 125 };
+            const firebaseConfig = { apiKey: "AIzaSyDGIhsybWV-Flv9VIHKF99XuCU6hge_MeM", authDomain: "yapicashbook.firebaseapp.com", projectId: "yapicashbook", storageBucket: "yapicashbook.firebasestorage.app", messagingSenderId: "744431657302", appId: "1:744431657302:web:2ea0b04af4ea92511276f7", measurementId: "G-TBKDF69T9Q" };
+            
+            let appInstance, authInstance, dbInstance;
+            let currentTransactionType = 'deposit'; // 現在のフォームタイプを管理
+
+            try {
+                appInstance = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
+                authInstance = firebase.auth(appInstance);
+                dbInstance = firebase.firestore(appInstance);
+            } catch (e) {
+                console.error("Firebase initialization failed:", e);
+                alert("Firebaseの初期化に失敗しました。");
+                return;
+            }
+
+            let currentUser = null;
+            let allTransactions = [];
+            let descriptionsConfig = [], depositDescriptions = [], paymentDescriptions = [], descriptionToAccountTitleMap = {};
+            let displayedDate = new Date();
+
+            async function loadSettings() { if (!currentUser || !dbInstance) { descriptionsConfig = []; rebuildDescriptionArrays(); return; } const settingsRef = dbInstance.collection('users').doc(currentUser.uid).collection('descriptions').orderBy('text'); try { const snapshot = await settingsRef.get(); if (snapshot.empty) { const batch = dbInstance.batch(); defaultDescriptions.forEach(desc => { const docRef = dbInstance.collection('users').doc(currentUser.uid).collection('descriptions').doc(); batch.set(docRef, desc); }); await batch.commit(); const newSnapshot = await settingsRef.get(); descriptionsConfig = newSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); } else { descriptionsConfig = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); } rebuildDescriptionArrays(); } catch (error) { console.error("Error loading description settings:", error); alert("摘要設定の読み込みに失敗しました。"); descriptionsConfig = []; rebuildDescriptionArrays(); } }
+            function rebuildDescriptionArrays() { depositDescriptions = descriptionsConfig.filter(d => d.type === 'deposit').map(d => d.text); depositDescriptions.push(OTHER_DESCRIPTION); paymentDescriptions = descriptionsConfig.filter(d => d.type === 'payment').map(d => d.text); paymentDescriptions.push(OTHER_DESCRIPTION); descriptionToAccountTitleMap = {}; descriptionsConfig.forEach(d => { descriptionToAccountTitleMap[d.text] = d.account; }); descriptionToAccountTitleMap[OTHER_DESCRIPTION] = "仮払金"; }
+            function renderAdminList() { const tbody = document.getElementById('adminListBody'); if (!tbody) return; tbody.innerHTML = ''; descriptionsConfig.forEach(config => { const tr = document.createElement('tr'); tr.innerHTML = `<td class="border px-2 py-1">${config.text}</td><td class="border px-2 py-1">${config.type === 'deposit' ? '入金' : '支払い'}</td><td class="border px-2 py-1">${config.account}</td><td class="border px-2 py-1 text-center"><button data-id="${config.id}" data-text="${config.text}" class="delete-desc-btn bg-red-500 text-white text-xs py-1 px-2 rounded">削除</button></td>`; tbody.appendChild(tr); }); document.querySelectorAll('.delete-desc-btn').forEach(btn => { btn.addEventListener('click', async (e) => { const { id, text } = e.target.dataset; if (!confirm(`「${text}」を削除しますか？`)) return; try { await dbInstance.collection('users').doc(currentUser.uid).collection('descriptions').doc(id).delete(); alert('削除しました。'); await loadSettings(); renderAdminList(); } catch (error) { console.error("Error deleting description:", error); alert("削除に失敗しました。"); } }); }); }
+            function populateTaxCategoryDropdown(selectElementId, defaultTaxCategory = "対象外") { const selectEl = document.getElementById(selectElementId); if (!selectEl) return; selectEl.innerHTML = ''; taxCategories.forEach(tc => { const option = document.createElement('option'); option.value = tc; option.textContent = tc; if (tc === defaultTaxCategory) option.selected = true; selectEl.appendChild(option); }); }
+            function populateDescriptionDropdown(selectElementId, type, defaultDescription = "", otherInputElId) { const selectEl = document.getElementById(selectElementId); const otherInputEl = document.getElementById(otherInputElId); if (!selectEl || !otherInputEl) return; selectEl.innerHTML = '<option value="">-- 摘要を選択 --</option>'; const optionsArray = type === 'deposit' ? depositDescriptions : paymentDescriptions; let isDefaultInOptions = false; optionsArray.forEach(desc => { const option = document.createElement('option'); option.value = desc; option.textContent = desc; if (desc === defaultDescription) { option.selected = true; isDefaultInOptions = true; } selectEl.appendChild(option); }); if (defaultDescription && !isDefaultInOptions && optionsArray.includes(OTHER_DESCRIPTION)) { selectEl.value = OTHER_DESCRIPTION; otherInputEl.value = defaultDescription; otherInputEl.classList.remove('hidden-input'); } else if (selectEl.value === OTHER_DESCRIPTION) { otherInputEl.classList.remove('hidden-input'); } else { otherInputEl.classList.add('hidden-input'); otherInputEl.value = ''; } }
+            function setupDescriptionDropdownListener(selectElId, otherInputElId) { const selectEl = document.getElementById(selectElId); const otherInputEl = document.getElementById(otherInputElId); if (selectEl && otherInputEl) { selectEl.addEventListener('change', function() { if (this.value === OTHER_DESCRIPTION) { otherInputEl.classList.remove('hidden-input'); otherInputEl.focus(); } else { otherInputEl.classList.add('hidden-input'); otherInputEl.value = ''; } }); } }
+            setupDescriptionDropdownListener('depositDescriptionSelect', 'depositDescriptionOther');
+            setupDescriptionDropdownListener('paymentDescriptionSelect', 'paymentDescriptionOther');
+            setupDescriptionDropdownListener('editDescriptionSelect', 'editDescriptionOther');
+
+            function showScreen(id) {
+                ['authScreen','appContainer','homeScreen','transactionFormScreen','listScreen','adminScreen','listEditModal','balanceCheckModal'].forEach(elId => {
+                    const el = document.getElementById(elId);
+                    if (el) el.classList.add('hidden');
+                });
+                if (id === 'authScreen') { document.getElementById('authScreen').classList.remove('hidden'); document.getElementById('appContainer').classList.add('hidden');
+                } else {
+                    document.getElementById('appContainer').classList.remove('hidden');
+                    const targetScreenEl = document.getElementById(id);
+                    if (targetScreenEl) targetScreenEl.classList.remove('hidden');
+                }
+            }
+
+            authInstance.onAuthStateChanged(async user => {
+                currentUser = user;
+                if (user) {
+                    document.getElementById('loggedInUser').textContent = `ログイン中: ${user.email}`;
+                    await loadSettings();
+                    await loadAllTransactions();
+                    showScreen('homeScreen');
+                } else {
+                    allTransactions = []; descriptionsConfig = []; rebuildDescriptionArrays();
+                    document.getElementById('currentBalanceHome').textContent = '¥0';
+                    showScreen('authScreen');
+                }
+            });
+
+            document.getElementById('loginBtn').addEventListener('click', () => { const e = document.getElementById('loginEmail').value, p = document.getElementById('loginPassword').value; authInstance.signInWithEmailAndPassword(e, p).catch(err => alert(`ログインエラー: ${err.message}`)); });
+            document.getElementById('showRegisterLink').addEventListener('click', () => document.getElementById('registerForm').classList.toggle('hidden'));
+            document.getElementById('registerBtn').addEventListener('click', () => { const e = document.getElementById('registerEmail').value, p = document.getElementById('registerPassword').value, c = document.getElementById('registerPasswordConfirm').value; if (p !== c) return alert('パスワードが一致しません'); authInstance.createUserWithEmailAndPassword(e, p).catch(err => alert(`登録エラー: ${err.message}`)); });
+            document.getElementById('logoutBtn').addEventListener('click', () => authInstance.signOut());
+
+            // ★★★【変更】取引登録画面への遷移ロジック ★★★
+            document.getElementById('toDepositBtn').addEventListener('click', () => {
+                currentTransactionType = 'deposit';
+                document.getElementById('transactionFormTitle').textContent = '入金登録';
+                document.getElementById('transactionDate').valueAsDate = new Date();
+                document.getElementById('depositAmount').value = '';
+                document.getElementById('depositHandlerName').value = '';
+                populateDescriptionDropdown('depositDescriptionSelect', 'deposit', "", 'depositDescriptionOther');
+                document.getElementById('depositFormContainer').classList.remove('hidden');
+                document.getElementById('paymentFormContainer').classList.add('hidden');
+                showScreen('transactionFormScreen');
+            });
+
+            document.getElementById('toPaymentBtn').addEventListener('click', () => {
+                currentTransactionType = 'payment';
+                document.getElementById('transactionFormTitle').textContent = '支払い登録';
+                document.getElementById('transactionDate').valueAsDate = new Date();
+                document.getElementById('paymentHandlerName').value = '';
+                populateDescriptionDropdown('paymentDescriptionSelect', 'payment', "", 'paymentDescriptionOther');
+                document.getElementById('paymentDetailsContainer').innerHTML = '';
+                addPaymentDetailRow();
+                document.getElementById('depositFormContainer').classList.add('hidden');
+                document.getElementById('paymentFormContainer').classList.remove('hidden');
+                showScreen('transactionFormScreen');
+            });
+            document.getElementById('backToHomeBtn').addEventListener('click', () => showScreen('homeScreen'));
+            document.getElementById('backFromListBtn').addEventListener('click', () => showScreen('homeScreen'));
+            document.getElementById('backFromAdminBtn').addEventListener('click', () => showScreen('homeScreen'));
+
+            // ★★★【追加】支払いフォームの明細行操作ロジック ★★★
+            function addPaymentDetailRow() {
+                const container = document.getElementById('paymentDetailsContainer');
+                const detailRow = document.createElement('div');
+                detailRow.className = 'grid grid-cols-12 gap-2 items-center payment-detail-row';
+                detailRow.innerHTML = `
+                    <div class="col-span-4">
+                        <select class="w-full p-2 border rounded detail-tax-select">${paymentTaxCategories.map(tc => `<option value="${tc}">${tc}</option>`).join('')}</select>
+                    </div>
+                    <div class="col-span-3">
+                        <input type="number" min="1" class="w-full p-2 border rounded text-right detail-subtotal" placeholder="小計">
+                    </div>
+                    <div class="col-span-4">
+                        <input type="text" class="w-full p-2 border rounded detail-content" placeholder="内容 (任意)">
+                    </div>
+                    <div class="col-span-1 text-center">
+                        <button class="text-red-500 font-bold remove-detail-btn">×</button>
+                    </div>
+                `;
+                container.appendChild(detailRow);
+            }
+
+            document.getElementById('addPaymentDetailBtn').addEventListener('click', addPaymentDetailRow);
+
+            function updatePaymentTotal() {
+                let total = 0;
+                document.querySelectorAll('.payment-detail-row .detail-subtotal').forEach(input => {
+                    total += parseFloat(input.value || 0);
+                });
+                document.getElementById('totalPaymentAmount').textContent = `¥${total.toLocaleString()}`;
+            }
+
+            document.getElementById('paymentDetailsContainer').addEventListener('input', (e) => {
+                if (e.target.classList.contains('detail-subtotal')) {
+                    updatePaymentTotal();
+                }
+            });
+
+            document.getElementById('paymentDetailsContainer').addEventListener('click', (e) => {
+                if (e.target.classList.contains('remove-detail-btn')) {
+                    e.target.closest('.payment-detail-row').remove();
+                    updatePaymentTotal();
+                }
+            });
+            
+            document.getElementById('toAdminBtn').addEventListener('click', () => { const selectEl = document.getElementById('newDescriptionAccount'); selectEl.innerHTML = ''; accountTitles.forEach(title => { const option = document.createElement('option'); option.value = title; option.textContent = title; selectEl.appendChild(option); }); renderAdminList(); showScreen('adminScreen'); });
+            document.getElementById('addDescriptionBtn').addEventListener('click', async () => { if (!currentUser) return alert("ログインしていません。"); const text = document.getElementById('newDescriptionText').value.trim(), type = document.getElementById('newDescriptionType').value, account = document.getElementById('newDescriptionAccount').value; if (!text || !type || !account) return alert("すべての項目を入力してください。"); if (descriptionsConfig.some(d => d.text.toLowerCase() === text.toLowerCase())) return alert("同じ名前の摘要がすでに存在します。"); try { await dbInstance.collection('users').doc(currentUser.uid).collection('descriptions').add({ text, type, account }); alert("摘要を追加しました。"); document.getElementById('newDescriptionText').value = ''; await loadSettings(); renderAdminList(); } catch (error) { console.error("Error adding new description:", error); alert("摘要の追加に失敗しました。"); } });
+            
+            document.getElementById('cancelEditBtn').addEventListener('click', () => document.getElementById('listEditModal').classList.add('hidden'));
+            function calculateCurrentBalance(transactionsArray) { return transactionsArray.reduce((bal, tx) => bal + (tx.type === 'deposit' ? 1 : -1) * parseFloat(tx.amount || 0), 0); }
+            async function loadAllTransactions() { if (!currentUser) { allTransactions = []; document.getElementById('currentBalanceHome').textContent = '¥0'; renderList(); return; } try { const snap = await dbInstance.collection('users').doc(currentUser.uid).collection('transactions').orderBy('createdAt','asc').get(); allTransactions = snap.docs.map(d => ({ id: d.id, ...d.data() })); const currentBalance = calculateCurrentBalance(allTransactions); document.getElementById('currentBalanceHome').textContent = `¥${currentBalance.toLocaleString()}`; renderList(); } catch (error) { console.error("Error loading transactions:", error); alert("取引読込エラー"); allTransactions = []; document.getElementById('currentBalanceHome').textContent = '¥0 (エラー)'; renderList(); }}
+            
+            // ★★★【変更】取引登録ロジックをフォームタイプに応じて分岐 ★★★
+            document.getElementById('addTransactionBtn').addEventListener('click', async () => {
+                if (!currentUser) return alert('ログインしていません。');
+                
+                const dateStr = document.getElementById('transactionDate').value;
+                if (!dateStr) return alert('日付を入力してください。');
+
+                if (currentTransactionType === 'deposit') {
+                    // 入金処理
+                    const amount = parseFloat(document.getElementById('depositAmount').value);
+                    let selectedDesc = document.getElementById('depositDescriptionSelect').value;
+                    let finalDesc = selectedDesc === OTHER_DESCRIPTION ? document.getElementById('depositDescriptionOther').value.trim() : selectedDesc;
+                    const handlerName = document.getElementById('depositHandlerName').value.trim();
+
+                    if (isNaN(amount) || amount <= 0 || !finalDesc) return alert('金額（正の数）と摘要を正しく入力・選択してください。');
+                    
+                    const accountTitleValue = descriptionToAccountTitleMap[selectedDesc] || '';
+                    const transactionData = { date: dateStr, type: 'deposit', amount, description: finalDesc, accountTitle: accountTitleValue, taxCategory: "対象外", invoiceYn: false, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+                    if (handlerName) transactionData.handlerName = handlerName;
+
+                    try {
+                        await dbInstance.collection('users').doc(currentUser.uid).collection('transactions').add(transactionData);
+                        alert(`入金登録完了。`);
+                        await loadAllTransactions();
+                        showScreen('homeScreen');
+                    } catch (error) {
+                        console.error("Error adding deposit transaction: ", error);
+                        alert('取引登録エラー');
+                    }
+                } else if (currentTransactionType === 'payment') {
+                    // 支払い処理 (バッチ書き込み)
+                    let selectedDesc = document.getElementById('paymentDescriptionSelect').value;
+                    let mainDesc = selectedDesc === OTHER_DESCRIPTION ? document.getElementById('paymentDescriptionOther').value.trim() : selectedDesc;
+                    const handlerName = document.getElementById('paymentHandlerName').value.trim();
+
+                    if (!mainDesc) return alert('買った場所（摘要）を入力・選択してください。');
+
+                    const detailRows = document.querySelectorAll('.payment-detail-row');
+                    if (detailRows.length === 0) return alert('明細を1つ以上追加してください。');
+
+                    const batch = dbInstance.batch();
+                    const transactionsToCreate = [];
+                    let hasError = false;
+
+                    detailRows.forEach(row => {
+                        const subtotal = parseFloat(row.querySelector('.detail-subtotal').value || 0);
+                        if (subtotal <= 0) {
+                            hasError = true;
+                        }
+                        const taxCategory = row.querySelector('.detail-tax-select').value;
+                        const content = row.querySelector('.detail-content').value.trim();
+                        
+                        const finalDesc = content ? `${mainDesc} - ${content}` : mainDesc;
+                        const accountTitleValue = descriptionToAccountTitleMap[selectedDesc] || '';
+
+                        transactionsToCreate.push({
+                            date: dateStr, type: 'payment', amount: subtotal, description: finalDesc,
+                            accountTitle: accountTitleValue, taxCategory, invoiceYn: false,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                            ...(handlerName && { handlerName })
+                        });
+                    });
+
+                    if (hasError) return alert('すべての明細に正しい小計（正の数）を入力してください。');
+                    if (transactionsToCreate.length === 0) return alert('登録する明細がありません。');
+
+                    transactionsToCreate.forEach(data => {
+                        const docRef = dbInstance.collection('users').doc(currentUser.uid).collection('transactions').doc();
+                        batch.set(docRef, data);
+                    });
+
+                    try {
+                        await batch.commit();
+                        alert(`${transactionsToCreate.length}件の支払い明細を登録しました。`);
+                        await loadAllTransactions();
+                        showScreen('homeScreen');
+                    } catch(error) {
+                        console.error("Error adding payment transactions: ", error);
+                        alert('支払い登録エラー');
+                    }
+                }
+            });
+            
+            function renderList() {
+                const tbody = document.getElementById('listBody');
+                const monthDisplay = document.getElementById('monthDisplay');
+                if (!tbody || !monthDisplay) return;
+                const year = displayedDate.getFullYear();
+                const month = displayedDate.getMonth();
+                monthDisplay.textContent = `${year}年 ${month + 1}月`;
+                let balanceBroughtForward = 0;
+                allTransactions.forEach(tx => {
+                    const txDate = new Date(tx.date + 'T00:00:00Z');
+                    if (txDate.getFullYear() < year || (txDate.getFullYear() === year && txDate.getUTCMonth() < month)) {
+                        balanceBroughtForward += (tx.type === 'deposit' ? 1 : -1) * parseFloat(tx.amount || 0);
+                    }
+                });
+                tbody.innerHTML = `<tr class="bg-gray-100 font-bold"><td class="border px-2 py-1" colspan="7">前月繰越</td><td class="border px-2 py-1 text-right">${balanceBroughtForward.toLocaleString()}</td><td class="border px-2 py-1"></td></tr>`;
+                const thisMonthTransactions = allTransactions.filter(tx => {
+                    const txDate = new Date(tx.date + 'T00:00:00Z');
+                    return txDate.getFullYear() === year && txDate.getUTCMonth() === month;
+                });
+                let runningBalance = balanceBroughtForward;
+                thisMonthTransactions.forEach(tx => {
+                    const amountNumber = parseFloat(tx.amount || 0);
+                    runningBalance += (tx.type === 'deposit' ? 1 : -1) * amountNumber;
+                    const dateObj = new Date(tx.date + 'T00:00:00Z');
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="border px-2 py-1">${dateObj.getUTCMonth() + 1}</td>
+                        <td class="border px-2 py-1">${dateObj.getUTCDate()}</td>
+                        <td class="border px-2 py-1">${tx.accountTitle || '-'}</td>
+                        <td class="border px-2 py-1">${tx.taxCategory || '未設定'}</td>
+                        <td class="border px-2 py-1 text-right">${tx.type === 'deposit' ? amountNumber.toLocaleString() : ''}</td>
+                        <td class="border px-2 py-1 text-right">${tx.type === 'payment' ? amountNumber.toLocaleString() : ''}</td>
+                        <td class="border px-2 py-1">${tx.handlerName || '-'}</td>
+                        <td class="border px-2 py-1 text-right">${runningBalance.toLocaleString()}</td>
+                        <td class="border px-2 py-1 text-center"><button class="edit-btn text-xs bg-yellow-400 hover:bg-yellow-500 text-black py-1 px-2 rounded">編集</button></td>
+                    `;
+                    tr.querySelector('.edit-btn').onclick = () => openListEditModal(tx);
+                    tbody.appendChild(tr);
+                });
+            }
+
+            document.getElementById('toListBtn').addEventListener('click', () => { displayedDate = new Date(); renderList(); showScreen('listScreen'); });
+            document.getElementById('prevMonthBtn').addEventListener('click', () => { displayedDate.setMonth(displayedDate.getMonth() - 1); renderList(); });
+            document.getElementById('nextMonthBtn').addEventListener('click', () => { displayedDate.setMonth(displayedDate.getMonth() + 1); renderList(); });
+
+            function openListEditModal(tx) {
+                document.getElementById('editId').value = tx.id;
+                document.getElementById('editTransactionType').value = tx.type;
+                document.getElementById('editDate').value = tx.date;
+                document.getElementById('editAmount').value = tx.amount;
+                populateDescriptionDropdown('editDescriptionSelect', tx.type, tx.description, 'editDescriptionOther');
+                const selAccount = document.getElementById('editAccountSelect');
+                selAccount.innerHTML = '<option value="">-- 科目を選択 --</option>';
+                accountTitles.forEach(t => { const opt = document.createElement('option'); opt.value=t; opt.textContent=t; if(t === tx.accountTitle) opt.selected=true; selAccount.appendChild(opt); });
+                populateTaxCategoryDropdown('editTaxCategory', tx.taxCategory || "対象外");
+                document.getElementById('editInvoiceYn').checked = tx.invoiceYn || false;
+                document.getElementById('listEditModal').classList.remove('hidden');
+            }
+            
+            document.getElementById('saveEditBtn').addEventListener('click', async () => { if (!currentUser) return alert('ログインしていません。'); const id = document.getElementById('editId').value; const date = document.getElementById('editDate').value; const amount = parseFloat(document.getElementById('editAmount').value); let desc = document.getElementById('editDescriptionSelect').value; if (desc === OTHER_DESCRIPTION) desc = document.getElementById('editDescriptionOther').value.trim(); const acct = document.getElementById('editAccountSelect').value; const taxCategory = document.getElementById('editTaxCategory').value; const invoiceYn = document.getElementById('editInvoiceYn').checked; if (!date || isNaN(amount) || amount <= 0 || !desc || !taxCategory) return alert('日付、金額、摘要、税区分を正しく入力・選択してください。'); if (!acct && !confirm("科目が選択されていません。保存しますか？")) return; try { await dbInstance.collection('users').doc(currentUser.uid).collection('transactions').doc(id).update({ date, amount, description: desc, accountTitle: acct, taxCategory: taxCategory, invoiceYn: invoiceYn }); alert('取引更新完了'); document.getElementById('listEditModal').classList.add('hidden'); await loadAllTransactions(); } catch (error) { console.error("Error updating transaction:", error); alert('取引更新エラー'); } });
+            
+            document.getElementById('exportMfBtn').addEventListener('click', () => {
+                const year = displayedDate.getFullYear();
+                const month = displayedDate.getMonth();
+                let balanceBroughtForward = 0;
+                allTransactions.forEach(tx => { const txDate = new Date(tx.date + 'T00:00:00Z'); if (txDate.getFullYear() < year || (txDate.getFullYear() === year && txDate.getUTCMonth() < month)) { balanceBroughtForward += (tx.type === 'deposit' ? 1 : -1) * parseFloat(tx.amount || 0); } });
+                const thisMonthTransactions = allTransactions.filter(tx => { const txDate = new Date(tx.date + 'T00:00:00Z'); return txDate.getFullYear() === year && txDate.getUTCMonth() === month; });
+                if (thisMonthTransactions.length === 0) { alert('エクスポート対象の取引がありません。'); return; }
+                const csvHeader = "月,日,相手勘定科目,科目,相手補助科目,相手部門,相手取引先,相手税区分,相手インボイス,摘要,入金,出金,残高\n";
+                let csvContent = "data:text/csv;charset=utf-8," + csvHeader;
+                let runningBalance = balanceBroughtForward;
+                thisMonthTransactions.forEach(tx => {
+                    const txDate = new Date(tx.date + 'T00:00:00Z');
+                    runningBalance += (tx.type === 'deposit' ? 1 : -1) * parseFloat(tx.amount || 0);
+                    const row = [ txDate.getUTCMonth() + 1, txDate.getUTCDate(), accountTitleToCodeMap[tx.accountTitle] || '', tx.accountTitle || '', '', '', '', tx.taxCategory || '対象外', tx.invoiceYn ? '適格' : '', tx.description ? tx.description.replace(/,/g, ' ') : '', tx.type === 'deposit' ? tx.amount : '', tx.type === 'payment' ? tx.amount : '', runningBalance ];
+                    csvContent += row.join(',') + "\n";
+                });
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `cashbook_${year}${String(month + 1).padStart(2, '0')}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+            document.getElementById('deleteEditBtn').addEventListener('click', async () => { if (!currentUser) return; const id = document.getElementById('editId').value; if (!confirm("この取引を削除しますか？")) return; try { await dbInstance.collection('users').doc(currentUser.uid).collection('transactions').doc(id).delete(); alert('取引を削除しました。'); document.getElementById('listEditModal').classList.add('hidden'); await loadAllTransactions(); } catch (error) { console.error("Error deleting tx:", error); alert('削除エラー'); } });
+
+            // ★★★【変更】残高チェックにコメント機能を追加 ★★★
+            function openBalanceCheckModal() {
+                const modal = document.getElementById('balanceCheckModal');
+                if (!modal) return;
+                const bookBalance = calculateCurrentBalance(allTransactions);
+                let difference = 0;
+                modal.innerHTML = `
+                    <div class="bg-white p-6 rounded-lg w-full max-w-md shadow-xl" onclick="event.stopPropagation();">
+                        <h2 class="text-xl font-semibold mb-4">残高チェック</h2>
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center"><label class="text-gray-600">帳簿上の残高:</label><span class="font-bold text-lg">¥${bookBalance.toLocaleString()}</span></div>
+                            <div class="flex justify-between items-center"><label for="actualCashInput" class="text-gray-600">実際の現金残高:</label><input type="number" id="actualCashInput" class="p-2 border rounded w-1/2 text-right" placeholder="0"></div>
+                            <div class="flex justify-between items-center"><label for="balanceCheckHandlerName" class="text-gray-600">担当者名 (必須):</label><input type="text" id="balanceCheckHandlerName" class="p-2 border rounded w-1/2" placeholder="担当者名を入力"></div>
+                            <hr>
+                            <div class="flex justify-between items-center"><label class="text-gray-600">差額:</label><span id="balanceDifference" class="font-bold text-lg">¥0</span></div>
+                            <div id="differenceCommentWrapper" class="hidden"><label for="differenceComment" class="block text-sm font-medium text-gray-700">コメント (差額の理由など):</label><textarea id="differenceComment" class="w-full p-2 border rounded mt-1" rows="2"></textarea></div>
+                        </div>
+                        <div class="flex justify-between mt-6">
+                            <button id="closeBalanceCheckBtn" class="bg-gray-200 text-gray-700 py-2 px-4 rounded">閉じる</button>
+                            <button id="registerCheckResultBtn" class="bg-green-600 text-white py-2 px-4 rounded">チェック結果を登録</button>
+                        </div>
+                    </div>`;
+                modal.classList.remove('hidden');
+                const actualCashInput = document.getElementById('actualCashInput');
+                const balanceDifferenceEl = document.getElementById('balanceDifference');
+                const commentWrapper = document.getElementById('differenceCommentWrapper');
+                
+                const calculateDifference = () => {
+                    const actualCash = parseFloat(actualCashInput.value || 0);
+                    difference = actualCash - bookBalance;
+                    balanceDifferenceEl.textContent = `¥${difference.toLocaleString()}`;
+                    if (difference === 0) {
+                        balanceDifferenceEl.className = 'font-bold text-lg text-gray-800';
+                        commentWrapper.classList.add('hidden');
+                    } else {
+                        balanceDifferenceEl.className = difference > 0 ? 'font-bold text-lg text-green-600' : 'font-bold text-lg text-red-600';
+                        commentWrapper.classList.remove('hidden');
+                    }
+                };
+                actualCashInput.addEventListener('input', calculateDifference);
+                actualCashInput.focus();
+                calculateDifference();
+                const closeModal = () => { modal.classList.add('hidden'); modal.innerHTML = ''; };
+                document.getElementById('closeBalanceCheckBtn').addEventListener('click', closeModal);
+                modal.addEventListener('click', closeModal);
+
+                document.getElementById('registerCheckResultBtn').addEventListener('click', async () => {
+                    const handlerName = document.getElementById('balanceCheckHandlerName').value.trim();
+                    if (!handlerName) { alert('担当者名を入力してください。'); return; }
+                    
+                    const today = new Date();
+                    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                    let transactionData;
+                    let alertMessage;
+
+                    if (difference === 0) {
+                        transactionData = { date: dateStr, type: 'deposit', amount: 0, description: '残高一致を確認', accountTitle: '現金過不足', taxCategory: '対象外', invoiceYn: false, handlerName, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+                        alertMessage = '残高が一致したことを記録しました。';
+                    } else {
+                        const comment = document.getElementById('differenceComment').value.trim();
+                        transactionData = { date: dateStr, type: difference > 0 ? 'deposit' : 'payment', amount: Math.abs(difference), description: comment || '残高チェックによる調整', accountTitle: '現金過不足', taxCategory: '対象外', invoiceYn: false, handlerName, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+                        alertMessage = `差額(¥${difference.toLocaleString()})を「現金過不足」として登録しました。`;
+                    }
+                    
+                    try {
+                        await dbInstance.collection('users').doc(currentUser.uid).collection('transactions').add(transactionData);
+                        alert(alertMessage);
+                        closeModal();
+                        await loadAllTransactions();
+                    } catch (error) {
+                        console.error("Error adding check result transaction:", error);
+                        alert("チェック結果の登録に失敗しました。");
+                    }
+                });
+            }
+            document.getElementById('balanceCheckBtn').addEventListener('click', openBalanceCheckModal);
+        });
+    </script>
+</body>
+</html>
