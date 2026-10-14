@@ -147,11 +147,35 @@
                     <button id="addDescriptionBtn" class="bg-blue-600 text-white py-2 px-4 rounded h-fit">追加</button>
                 </div>
             </div>
-            <h3 class="text-lg font-medium mb-3">登録済み摘要一覧</h3>
+            <h3 class="text-lg font-medium mb-1">登録済み摘要一覧</h3>
+            <p class="text-xs text-gray-500 mb-3">「紐付く科目」を選び直すと、その摘要の科目を変更できます（これから登録する取引に反映）。</p>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm mb-4 border-collapse">
                     <thead><tr class="bg-gray-200"><th class="border px-2 py-1">摘要名</th><th class="border px-2 py-1">取引種別</th><th class="border px-2 py-1">紐付く科目</th><th class="border px-2 py-1 text-center">操作</th></tr></thead>
                     <tbody id="adminListBody"></tbody>
+                </table>
+            </div>
+
+            <div class="bg-gray-50 p-4 rounded-lg mt-8 mb-4">
+                <h3 class="text-lg font-medium mb-3">勘定科目を追加</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div class="md:col-span-2">
+                        <label for="newAccountName" class="block text-sm font-medium text-gray-700">科目名</label>
+                        <input type="text" id="newAccountName" class="w-full p-2 border rounded mt-1" placeholder="例: 車両費">
+                    </div>
+                    <div>
+                        <label for="newAccountCode" class="block text-sm font-medium text-gray-700">MFエクスポート用コード (任意)</label>
+                        <input type="text" id="newAccountCode" class="w-full p-2 border rounded mt-1" placeholder="例: 126">
+                    </div>
+                    <button id="addAccountBtn" class="bg-blue-600 text-white py-2 px-4 rounded h-fit">追加</button>
+                </div>
+            </div>
+            <h3 class="text-lg font-medium mb-3">追加した勘定科目</h3>
+            <p id="noCustomAccountsMsg" class="text-sm text-gray-500 mb-3">まだ追加した科目はありません。</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm mb-4 border-collapse">
+                    <thead><tr class="bg-gray-200"><th class="border px-2 py-1">科目名</th><th class="border px-2 py-1">コード</th><th class="border px-2 py-1 text-center">操作</th></tr></thead>
+                    <tbody id="customAccountListBody"></tbody>
                 </table>
             </div>
             <button id="backFromAdminBtn" class="bg-gray-200 text-gray-700 py-2 px-4 rounded mt-4">戻る</button>
@@ -164,9 +188,24 @@
     <script defer>
         document.addEventListener('DOMContentLoaded', () => {
             const accountTitles = ['食料仕入高','外注工賃','租税公課','荷造運賃','水道光熱費','旅費交通費','通信費','広告宣伝費','接待交際費','損害保険料','修繕費','消耗品費','福利厚生費','地代家賃','リース料','研修採用費','新聞図書費','会議費','場所代','音響・照明','映像撮影','支払手数料','雑費','資金移動','仮払金','事業主貸', '現金過不足', '売上高', '事業主借', '雑収入'];
-            const taxCategories = ["対象外", "課税仕入10%", "課税仕入8%(軽)", "課税売上10%", "課税売上8%(軽)", "非課税売上", "非課税仕入", "不課税"];
-            // ★★★【変更】支払い登録で使用する税率選択肢 ★★★
+            // ★★★【変更】税区分の表記をマネーフォワード形式に統一 ★★★
+            const taxCategories = ["対象外", "課税仕入 10%", "課税仕入 (軽)8%", "課税売上 10%", "課税売上 (軽)8%", "非課税売上", "非課税仕入", "不課税"];
             const paymentTaxCategories = ["課税仕入 (軽)8%", "課税仕入 10%"];
+            // 過去の表記ゆれ（例: 課税仕入8%(軽)）をMF形式に読み替える。保存済みデータは書き換えず、表示・編集・エクスポート時に統一する
+            const TAX_CATEGORY_NORMALIZE_MAP = {
+                "課税仕入8%(軽)": "課税仕入 (軽)8%", "課税仕入(軽)8%": "課税仕入 (軽)8%", "課税仕入軽8%": "課税仕入 (軽)8%", "課税仕入8%軽": "課税仕入 (軽)8%",
+                "課税仕入10%": "課税仕入 10%",
+                "課税売上8%(軽)": "課税売上 (軽)8%", "課税売上(軽)8%": "課税売上 (軽)8%", "課税売上軽8%": "課税売上 (軽)8%", "課税売上8%軽": "課税売上 (軽)8%",
+                "課税売上10%": "課税売上 10%"
+            };
+            function normalizeTaxCategory(tc) {
+                if (!tc) return tc;
+                const compact = String(tc)
+                    .replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+                    .replace(/％/g, '%').replace(/（/g, '(').replace(/）/g, ')')
+                    .replace(/[\s　]+/g, '');
+                return TAX_CATEGORY_NORMALIZE_MAP[compact] || tc;
+            }
             const OTHER_DESCRIPTION = "その他";
             const defaultDescriptions = [ { text: "レジ現金から入金", type: "deposit", account: "資金移動" }, { text: "売上金から入金", type: "deposit", account: "資金移動" }, { text: "フレスコ", type: "payment", account: "食料仕入高" }, { text: "業務スーパー", type: "payment", account: "食料仕入高" }, { text: "木村喜商店", type: "payment", account: "食料仕入高" }, { text: "八百屋みどりなす", type: "payment", account: "食料仕入高" }, { text: "株式会社プロサムフーズ", type: "payment", account: "食料仕入高" }, { text: "SARTAJ", type: "payment", account: "食料仕入高" }, { text: "神戸スパイス", type: "payment", account: "食料仕入高" }, { text: "関西電力", type: "payment", account: "水道光熱費" }, { text: "ワッツ", type: "payment", account: "消耗品費" }, { text: "新鮮市場", type: "payment", account: "食料仕入高" }, { text: "叶屋", type: "payment", account: "食料仕入高" }, { text: "ムスリムCOOP", type: "payment", account: "食料仕入高" }, ];
             const accountTitleToCodeMap = { '食料仕入高': 100, '外注工賃': 101, '租税公課': 102, '荷造運賃': 103, '水道光熱費': 104, '旅費交通費': 105, '通信費': 106, '広告宣伝費': 107, '接待交際費': 108, '損害保険料': 109, '修繕費': 110, '消耗品費': 111, '福利厚生費': 112, '地代家賃': 113, 'リース料': 114, '研修採用費': 115, '新聞図書費': 116, '会議費': 117, '場所代': 118, '音響・照明': 119, '映像撮影': 120, '支払手数料': 121, '雑費': 122, '資金移動': 123, '仮払金': 124, '事業主借': 125 };
@@ -189,11 +228,95 @@
             let allTransactions = [];
             let descriptionsConfig = [], depositDescriptions = [], paymentDescriptions = [], descriptionToAccountTitleMap = {};
             let displayedDate = new Date();
+            let customAccounts = []; // ★★★【追加】ユーザーが追加した勘定科目 { id, name, code }
+
+            // ★★★【追加】勘定科目の一覧（標準 + 追加分）とMFコードの取得 ★★★
+            function getAllAccountTitles() {
+                const extra = customAccounts.map(a => a.name).filter(n => !accountTitles.includes(n));
+                return [...accountTitles, ...extra];
+            }
+            function getAccountCode(name) {
+                if (!name) return '';
+                if (accountTitleToCodeMap[name] !== undefined) return accountTitleToCodeMap[name];
+                const custom = customAccounts.find(a => a.name === name);
+                return custom && custom.code ? custom.code : '';
+            }
+            function fillAccountSelect(selectEl, selectedValue = '', placeholder = '') {
+                if (!selectEl) return;
+                selectEl.innerHTML = '';
+                if (placeholder) { const p = document.createElement('option'); p.value = ''; p.textContent = placeholder; selectEl.appendChild(p); }
+                const titles = getAllAccountTitles();
+                if (selectedValue && !titles.includes(selectedValue)) titles.push(selectedValue); // 削除済みの科目でも消えないように残す
+                titles.forEach(t => { const opt = document.createElement('option'); opt.value = t; opt.textContent = t; if (t === selectedValue) opt.selected = true; selectEl.appendChild(opt); });
+            }
+            async function loadCustomAccounts() {
+                if (!currentUser || !dbInstance) { customAccounts = []; return; }
+                try {
+                    const snap = await dbInstance.collection('users').doc(currentUser.uid).collection('accounts').orderBy('name').get();
+                    customAccounts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                } catch (error) {
+                    console.error("Error loading custom accounts:", error);
+                    customAccounts = [];
+                }
+            }
 
             async function loadSettings() { if (!currentUser || !dbInstance) { descriptionsConfig = []; rebuildDescriptionArrays(); return; } const settingsRef = dbInstance.collection('users').doc(currentUser.uid).collection('descriptions').orderBy('text'); try { const snapshot = await settingsRef.get(); if (snapshot.empty) { const batch = dbInstance.batch(); defaultDescriptions.forEach(desc => { const docRef = dbInstance.collection('users').doc(currentUser.uid).collection('descriptions').doc(); batch.set(docRef, desc); }); await batch.commit(); const newSnapshot = await settingsRef.get(); descriptionsConfig = newSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); } else { descriptionsConfig = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); } rebuildDescriptionArrays(); } catch (error) { console.error("Error loading description settings:", error); alert("摘要設定の読み込みに失敗しました。"); descriptionsConfig = []; rebuildDescriptionArrays(); } }
             function rebuildDescriptionArrays() { depositDescriptions = descriptionsConfig.filter(d => d.type === 'deposit').map(d => d.text); depositDescriptions.push(OTHER_DESCRIPTION); paymentDescriptions = descriptionsConfig.filter(d => d.type === 'payment').map(d => d.text); paymentDescriptions.push(OTHER_DESCRIPTION); descriptionToAccountTitleMap = {}; descriptionsConfig.forEach(d => { descriptionToAccountTitleMap[d.text] = d.account; }); descriptionToAccountTitleMap[OTHER_DESCRIPTION] = "仮払金"; }
-            function renderAdminList() { const tbody = document.getElementById('adminListBody'); if (!tbody) return; tbody.innerHTML = ''; descriptionsConfig.forEach(config => { const tr = document.createElement('tr'); tr.innerHTML = `<td class="border px-2 py-1">${config.text}</td><td class="border px-2 py-1">${config.type === 'deposit' ? '入金' : '支払い'}</td><td class="border px-2 py-1">${config.account}</td><td class="border px-2 py-1 text-center"><button data-id="${config.id}" data-text="${config.text}" class="delete-desc-btn bg-red-500 text-white text-xs py-1 px-2 rounded">削除</button></td>`; tbody.appendChild(tr); }); document.querySelectorAll('.delete-desc-btn').forEach(btn => { btn.addEventListener('click', async (e) => { const { id, text } = e.target.dataset; if (!confirm(`「${text}」を削除しますか？`)) return; try { await dbInstance.collection('users').doc(currentUser.uid).collection('descriptions').doc(id).delete(); alert('削除しました。'); await loadSettings(); renderAdminList(); } catch (error) { console.error("Error deleting description:", error); alert("削除に失敗しました。"); } }); }); }
-            function populateTaxCategoryDropdown(selectElementId, defaultTaxCategory = "対象外") { const selectEl = document.getElementById(selectElementId); if (!selectEl) return; selectEl.innerHTML = ''; taxCategories.forEach(tc => { const option = document.createElement('option'); option.value = tc; option.textContent = tc; if (tc === defaultTaxCategory) option.selected = true; selectEl.appendChild(option); }); }
+            // ★★★【変更】摘要ごとの科目をその場で変更できるように ★★★
+            function renderAdminList() {
+                const tbody = document.getElementById('adminListBody'); if (!tbody) return; tbody.innerHTML = '';
+                descriptionsConfig.forEach(config => {
+                    const tr = document.createElement('tr');
+                    const tdText = document.createElement('td'); tdText.className = 'border px-2 py-1'; tdText.textContent = config.text;
+                    const tdType = document.createElement('td'); tdType.className = 'border px-2 py-1'; tdType.textContent = config.type === 'deposit' ? '入金' : '支払い';
+                    const tdAccount = document.createElement('td'); tdAccount.className = 'border px-2 py-1';
+                    const sel = document.createElement('select'); sel.className = 'w-full p-1 border rounded';
+                    fillAccountSelect(sel, config.account);
+                    sel.addEventListener('change', async () => {
+                        const newAccount = sel.value;
+                        if (!confirm(`「${config.text}」の科目を「${config.account}」→「${newAccount}」に変更しますか？\n※これから登録する取引に反映されます（過去の取引は変わりません）`)) { sel.value = config.account; return; }
+                        try {
+                            await dbInstance.collection('users').doc(currentUser.uid).collection('descriptions').doc(config.id).update({ account: newAccount });
+                            alert('科目を変更しました。');
+                            await loadSettings(); renderAdminList();
+                        } catch (error) { console.error("Error updating description account:", error); alert("科目の変更に失敗しました。"); sel.value = config.account; }
+                    });
+                    tdAccount.appendChild(sel);
+                    const tdOps = document.createElement('td'); tdOps.className = 'border px-2 py-1 text-center';
+                    const delBtn = document.createElement('button'); delBtn.className = 'bg-red-500 text-white text-xs py-1 px-2 rounded'; delBtn.textContent = '削除';
+                    delBtn.addEventListener('click', async () => { if (!confirm(`「${config.text}」を削除しますか？`)) return; try { await dbInstance.collection('users').doc(currentUser.uid).collection('descriptions').doc(config.id).delete(); alert('削除しました。'); await loadSettings(); renderAdminList(); } catch (error) { console.error("Error deleting description:", error); alert("削除に失敗しました。"); } });
+                    tdOps.appendChild(delBtn);
+                    tr.append(tdText, tdType, tdAccount, tdOps);
+                    tbody.appendChild(tr);
+                });
+                renderCustomAccountList();
+            }
+
+            // ★★★【追加】追加した勘定科目の一覧 ★★★
+            function renderCustomAccountList() {
+                const tbody = document.getElementById('customAccountListBody'); if (!tbody) return; tbody.innerHTML = '';
+                const emptyMsg = document.getElementById('noCustomAccountsMsg');
+                if (emptyMsg) emptyMsg.classList.toggle('hidden', customAccounts.length > 0);
+                customAccounts.forEach(acc => {
+                    const tr = document.createElement('tr');
+                    const tdName = document.createElement('td'); tdName.className = 'border px-2 py-1'; tdName.textContent = acc.name;
+                    const tdCode = document.createElement('td'); tdCode.className = 'border px-2 py-1'; tdCode.textContent = acc.code || '-';
+                    const tdOps = document.createElement('td'); tdOps.className = 'border px-2 py-1 text-center';
+                    const delBtn = document.createElement('button'); delBtn.className = 'bg-red-500 text-white text-xs py-1 px-2 rounded'; delBtn.textContent = '削除';
+                    delBtn.addEventListener('click', async () => {
+                        const used = descriptionsConfig.filter(d => d.account === acc.name).map(d => d.text);
+                        if (used.length) return alert(`科目「${acc.name}」は次の摘要に紐付いています。先に別の科目に変更してください。\n・${used.join('\n・')}`);
+                        if (!confirm(`科目「${acc.name}」を削除しますか？\n※過去の取引に入っている科目名はそのまま残ります`)) return;
+                        try { await dbInstance.collection('users').doc(currentUser.uid).collection('accounts').doc(acc.id).delete(); await loadCustomAccounts(); refreshAdminScreen(); }
+                        catch (error) { console.error("Error deleting account:", error); alert("科目の削除に失敗しました。"); }
+                    });
+                    tdOps.appendChild(delBtn);
+                    tr.append(tdName, tdCode, tdOps);
+                    tbody.appendChild(tr);
+                });
+            }
+            function refreshAdminScreen() { fillAccountSelect(document.getElementById('newDescriptionAccount')); renderAdminList(); }
+            function populateTaxCategoryDropdown(selectElementId, defaultTaxCategory = "対象外") { const selectEl = document.getElementById(selectElementId); if (!selectEl) return; selectEl.innerHTML = ''; defaultTaxCategory = normalizeTaxCategory(defaultTaxCategory) || "対象外"; const list = taxCategories.includes(defaultTaxCategory) ? taxCategories : [...taxCategories, defaultTaxCategory]; list.forEach(tc => { const option = document.createElement('option'); option.value = tc; option.textContent = tc; if (tc === defaultTaxCategory) option.selected = true; selectEl.appendChild(option); }); }
             function populateDescriptionDropdown(selectElementId, type, defaultDescription = "", otherInputElId) { const selectEl = document.getElementById(selectElementId); const otherInputEl = document.getElementById(otherInputElId); if (!selectEl || !otherInputEl) return; selectEl.innerHTML = '<option value="">-- 摘要を選択 --</option>'; const optionsArray = type === 'deposit' ? depositDescriptions : paymentDescriptions; let isDefaultInOptions = false; optionsArray.forEach(desc => { const option = document.createElement('option'); option.value = desc; option.textContent = desc; if (desc === defaultDescription) { option.selected = true; isDefaultInOptions = true; } selectEl.appendChild(option); }); if (defaultDescription && !isDefaultInOptions && optionsArray.includes(OTHER_DESCRIPTION)) { selectEl.value = OTHER_DESCRIPTION; otherInputEl.value = defaultDescription; otherInputEl.classList.remove('hidden-input'); } else if (selectEl.value === OTHER_DESCRIPTION) { otherInputEl.classList.remove('hidden-input'); } else { otherInputEl.classList.add('hidden-input'); otherInputEl.value = ''; } }
             function setupDescriptionDropdownListener(selectElId, otherInputElId) { const selectEl = document.getElementById(selectElId); const otherInputEl = document.getElementById(otherInputElId); if (selectEl && otherInputEl) { selectEl.addEventListener('change', function() { if (this.value === OTHER_DESCRIPTION) { otherInputEl.classList.remove('hidden-input'); otherInputEl.focus(); } else { otherInputEl.classList.add('hidden-input'); otherInputEl.value = ''; } }); } }
             setupDescriptionDropdownListener('depositDescriptionSelect', 'depositDescriptionOther');
@@ -218,10 +341,11 @@
                 if (user) {
                     document.getElementById('loggedInUser').textContent = `ログイン中: ${user.email}`;
                     await loadSettings();
+                    await loadCustomAccounts();
                     await loadAllTransactions();
                     showScreen('homeScreen');
                 } else {
-                    allTransactions = []; descriptionsConfig = []; rebuildDescriptionArrays();
+                    allTransactions = []; descriptionsConfig = []; customAccounts = []; rebuildDescriptionArrays();
                     document.getElementById('currentBalanceHome').textContent = '¥0';
                     showScreen('authScreen');
                 }
@@ -306,12 +430,31 @@
                 }
             });
             
-            document.getElementById('toAdminBtn').addEventListener('click', () => { const selectEl = document.getElementById('newDescriptionAccount'); selectEl.innerHTML = ''; accountTitles.forEach(title => { const option = document.createElement('option'); option.value = title; option.textContent = title; selectEl.appendChild(option); }); renderAdminList(); showScreen('adminScreen'); });
+            document.getElementById('toAdminBtn').addEventListener('click', () => { refreshAdminScreen(); showScreen('adminScreen'); });
+
+            // ★★★【追加】勘定科目の追加 ★★★
+            document.getElementById('addAccountBtn').addEventListener('click', async () => {
+                if (!currentUser) return alert("ログインしていません。");
+                const name = document.getElementById('newAccountName').value.trim();
+                const codeRaw = document.getElementById('newAccountCode').value.trim();
+                if (!name) return alert("科目名を入力してください。");
+                if (getAllAccountTitles().includes(name)) return alert("同じ名前の科目がすでにあります。");
+                const data = { name };
+                if (codeRaw) data.code = codeRaw;
+                try {
+                    await dbInstance.collection('users').doc(currentUser.uid).collection('accounts').add(data);
+                    document.getElementById('newAccountName').value = '';
+                    document.getElementById('newAccountCode').value = '';
+                    await loadCustomAccounts();
+                    refreshAdminScreen();
+                    alert(`科目「${name}」を追加しました。`);
+                } catch (error) { console.error("Error adding account:", error); alert("科目の追加に失敗しました。"); }
+            });
             document.getElementById('addDescriptionBtn').addEventListener('click', async () => { if (!currentUser) return alert("ログインしていません。"); const text = document.getElementById('newDescriptionText').value.trim(), type = document.getElementById('newDescriptionType').value, account = document.getElementById('newDescriptionAccount').value; if (!text || !type || !account) return alert("すべての項目を入力してください。"); if (descriptionsConfig.some(d => d.text.toLowerCase() === text.toLowerCase())) return alert("同じ名前の摘要がすでに存在します。"); try { await dbInstance.collection('users').doc(currentUser.uid).collection('descriptions').add({ text, type, account }); alert("摘要を追加しました。"); document.getElementById('newDescriptionText').value = ''; await loadSettings(); renderAdminList(); } catch (error) { console.error("Error adding new description:", error); alert("摘要の追加に失敗しました。"); } });
             
             document.getElementById('cancelEditBtn').addEventListener('click', () => document.getElementById('listEditModal').classList.add('hidden'));
             function calculateCurrentBalance(transactionsArray) { return transactionsArray.reduce((bal, tx) => bal + (tx.type === 'deposit' ? 1 : -1) * parseFloat(tx.amount || 0), 0); }
-            async function loadAllTransactions() { if (!currentUser) { allTransactions = []; document.getElementById('currentBalanceHome').textContent = '¥0'; renderList(); return; } try { const snap = await dbInstance.collection('users').doc(currentUser.uid).collection('transactions').orderBy('createdAt','asc').get(); allTransactions = snap.docs.map(d => ({ id: d.id, ...d.data() })); const currentBalance = calculateCurrentBalance(allTransactions); document.getElementById('currentBalanceHome').textContent = `¥${currentBalance.toLocaleString()}`; renderList(); } catch (error) { console.error("Error loading transactions:", error); alert("取引読込エラー"); allTransactions = []; document.getElementById('currentBalanceHome').textContent = '¥0 (エラー)'; renderList(); }}
+            async function loadAllTransactions() { if (!currentUser) { allTransactions = []; document.getElementById('currentBalanceHome').textContent = '¥0'; renderList(); return; } try { const snap = await dbInstance.collection('users').doc(currentUser.uid).collection('transactions').orderBy('createdAt','asc').get(); allTransactions = snap.docs.map(d => { const data = { id: d.id, ...d.data() }; if (data.taxCategory) data.taxCategory = normalizeTaxCategory(data.taxCategory); return data; }); const currentBalance = calculateCurrentBalance(allTransactions); document.getElementById('currentBalanceHome').textContent = `¥${currentBalance.toLocaleString()}`; renderList(); } catch (error) { console.error("Error loading transactions:", error); alert("取引読込エラー"); allTransactions = []; document.getElementById('currentBalanceHome').textContent = '¥0 (エラー)'; renderList(); }}
             
             // ★★★【変更】取引登録ロジックをフォームタイプに応じて分岐 ★★★
             document.getElementById('addTransactionBtn').addEventListener('click', async () => {
@@ -448,8 +591,7 @@
                 document.getElementById('editAmount').value = tx.amount;
                 populateDescriptionDropdown('editDescriptionSelect', tx.type, tx.description, 'editDescriptionOther');
                 const selAccount = document.getElementById('editAccountSelect');
-                selAccount.innerHTML = '<option value="">-- 科目を選択 --</option>';
-                accountTitles.forEach(t => { const opt = document.createElement('option'); opt.value=t; opt.textContent=t; if(t === tx.accountTitle) opt.selected=true; selAccount.appendChild(opt); });
+                fillAccountSelect(selAccount, tx.accountTitle || '', '-- 科目を選択 --');
                 populateTaxCategoryDropdown('editTaxCategory', tx.taxCategory || "対象外");
                 document.getElementById('editInvoiceYn').checked = tx.invoiceYn || false;
                 document.getElementById('listEditModal').classList.remove('hidden');
@@ -470,7 +612,7 @@
                 thisMonthTransactions.forEach(tx => {
                     const txDate = new Date(tx.date + 'T00:00:00Z');
                     runningBalance += (tx.type === 'deposit' ? 1 : -1) * parseFloat(tx.amount || 0);
-                    const row = [ txDate.getUTCMonth() + 1, txDate.getUTCDate(), accountTitleToCodeMap[tx.accountTitle] || '', tx.accountTitle || '', '', '', '', tx.taxCategory || '対象外', tx.invoiceYn ? '適格' : '', tx.description ? tx.description.replace(/,/g, ' ') : '', tx.type === 'deposit' ? tx.amount : '', tx.type === 'payment' ? tx.amount : '', runningBalance ];
+                    const row = [ txDate.getUTCMonth() + 1, txDate.getUTCDate(), getAccountCode(tx.accountTitle), tx.accountTitle || '', '', '', '', normalizeTaxCategory(tx.taxCategory) || '対象外', tx.invoiceYn ? '適格' : '', tx.description ? tx.description.replace(/,/g, ' ') : '', tx.type === 'deposit' ? tx.amount : '', tx.type === 'payment' ? tx.amount : '', runningBalance ];
                     csvContent += row.join(',') + "\n";
                 });
                 const encodedUri = encodeURI(csvContent);
